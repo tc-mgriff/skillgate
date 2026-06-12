@@ -1,0 +1,31 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Scan mode: "subprocess" (simple) or "container" (hardened).
+      SKILLGATE_SCAN_MODE: "${SKILLGATE_SCAN_MODE:-subprocess}"
+      SKILLGATE_SCANNER_IMAGE: "skillgate-scanner:latest"
+      # Jira (optional — dry-run if unset)
+      JIRA_BASE_URL: "${JIRA_BASE_URL:-}"
+      JIRA_EMAIL: "${JIRA_EMAIL:-}"
+      JIRA_API_TOKEN: "${JIRA_API_TOKEN:-}"
+      JIRA_PROJECT: "${JIRA_PROJECT:-}"
+      # LLM reviewer: Claude on Azure AI Foundry (Anthropic Messages API)
+      SKILLGATE_LLM_ENDPOINT: "${SKILLGATE_LLM_ENDPOINT:-}"
+      SKILLGATE_LLM_API_KEY: "${SKILLGATE_LLM_API_KEY:-}"
+      SKILLGATE_LLM_MODEL: "${SKILLGATE_LLM_MODEL:-}"
+      SKILLGATE_LLM_ANTHROPIC_VERSION: "${SKILLGATE_LLM_ANTHROPIC_VERSION:-2023-06-01}"
+      SKILLGATE_LLM_MAX_TOKENS: "${SKILLGATE_LLM_MAX_TOKENS:-1024}"
+      # Cisco LLM layer (optional)
+      SKILL_SCANNER_LLM_API_KEY: "${SKILL_SCANNER_LLM_API_KEY:-}"
+    volumes:
+      # Needed ONLY when SKILLGATE_SCAN_MODE=container, so the web container can
+      # launch sibling scanner containers. Mounting the docker socket grants
+      # broad host control — acceptable for local testing, NOT for multi-tenant
+      # production. In prod use a rootless/remote docker, a sysbox runtime, or a
+      # separate job runner instead of bind-mounting the socket.
+      - /var/run/docker.sock:/var/run/docker.sock

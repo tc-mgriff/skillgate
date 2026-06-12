@@ -1,0 +1,12 @@
+# Hardened scanner image — runs ONLY the read-only static scanner.
+# This image has no network need and no write need beyond stdout.
+# It is invoked with --network=none --read-only by the worker.
+FROM python:3.12-slim
+
+RUN useradd --create-home --uid 10002 scanner
+WORKDIR /opt/scanner
+COPY scanner/skill_scan.py ./skill_scan.py
+
+USER scanner
+# The bundle is mounted read-only at /scan. The scanner only reads it.
+ENTRYPOINT ["python", "/opt/scanner/skill_scan.py", "/scan"]

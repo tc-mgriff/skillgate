@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkillGate — bundle review</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --line:#222a35; --ink:#e6edf3;
+    --muted:#8b98a5; --accent:#4493f8;
+    --pass:#3fb950; --review:#d29922; --block:#db8b2a; --reject:#f85149;
+    --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:Inter,-apple-system,Segoe UI,Roboto,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:48px 24px 96px}
+  header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
+         padding-bottom:18px;margin-bottom:32px}
+  .mark{font-family:var(--mono);font-size:13px;letter-spacing:.12em;
+        color:var(--bg);background:var(--ink);padding:4px 8px;border-radius:3px;font-weight:700}
+  h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
+  .sub{color:var(--muted);font-size:13px;font-family:var(--mono);margin-left:auto}
+  .drop{display:block;border:1px dashed var(--line);border-radius:8px;background:var(--panel);
+        padding:44px 24px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer}
+  .drop:hover,.drop.over{border-color:var(--accent);background:#11161d}
+  .drop p{margin:6px 0;color:var(--muted);font-size:14px}
+  .drop strong{color:var(--ink);font-weight:600}
+  .drop .types{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:14px}
+  input[type=file]{display:none}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--muted);
+        margin-top:18px;display:flex;gap:18px;flex-wrap:wrap}
+  .meta span b{color:var(--ink);font-weight:500}
+  .verdict{margin-top:28px;display:none;align-items:center;gap:16px;
+           padding:18px 20px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+  .verdict.show{display:flex}
+  .chip{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.08em;
+        padding:6px 12px;border-radius:4px;color:var(--bg)}
+  .chip.PASS{background:var(--pass)} .chip.REVIEW{background:var(--review)}
+  .chip.BLOCK_REVIEW{background:var(--block)} .chip.REJECT{background:var(--reject)}
+  .verdict .desc{font-size:13px;color:var(--muted)}
+  .verdict .desc b{color:var(--ink)}
+  .counts{margin-left:auto;font-family:var(--mono);font-size:12px;display:flex;gap:12px}
+  .counts .h{color:var(--reject)} .counts .m{color:var(--review)} .counts .l{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;margin-top:24px;font-size:13px;display:none;table-layout:fixed}
+  table.show{display:table}
+  th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+     text-transform:uppercase;color:var(--muted);font-weight:500;
+     padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:nth-child(1){width:7%} th:nth-child(2){width:20%} th:nth-child(3){width:16%}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;word-break:break-word}
+  td.sev{font-family:var(--mono);font-weight:700;white-space:nowrap}
+  td.sev.HIGH{color:var(--reject)} td.sev.MEDIUM{color:var(--review)} td.sev.LOW{color:var(--muted)}
+  td.loc{font-family:var(--mono);color:var(--muted);word-break:break-all}
+  td.check{font-family:var(--mono);color:var(--ink)}
+  .jira{margin-top:22px;font-size:13px;font-family:var(--mono);color:var(--muted);display:none}
+  .jira.show{display:block}
+  .jira a,.egress-url{color:var(--accent);text-decoration:none}
+  .egress-url:hover{text-decoration:underline}
+  .jira a:hover{text-decoration:underline}
+  .warn{margin-top:8px;font-size:12px;color:var(--review);font-family:var(--mono)}
+  .err{color:var(--reject);font-family:var(--mono);font-size:13px;margin-top:20px;display:none}
+  .err.show{display:block}
+  .exports{margin-top:18px;display:none;gap:8px}
+  .exports.show{display:flex}
+  .btn-export{font-family:var(--mono);font-size:11px;letter-spacing:.06em;font-weight:600;
+               padding:5px 12px;border-radius:4px;border:1px solid var(--line);
+               background:var(--panel);color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s}
+  .btn-export:hover{border-color:var(--accent);color:var(--ink)}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:16px;
+         font-family:var(--mono);font-size:11px;color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="mark">SKILLGATE</span>
+    <h1>Skill bundle review bench</h1>
+    <span class="sub">{% if jira_configured %}jira: live{% else %}jira: dry-run{% endif %}</span>
+  </header>
+
+  <label class="drop" id="drop" tabindex="0" role="button" aria-label="Upload a skill bundle">
+    <p><strong>Drop a .skill or .zip bundle here</strong></p>
+    <p>or click to choose a file</p>
+    <p class="types">.skill · .zip · SKILL.md — max 25 MB</p>
+    <input type="file" id="file" accept=".skill,.zip,.md">
+  </label>
+
+  <div class="meta" id="meta"></div>
+
+  <div class="verdict" id="verdict">
+    <span class="chip" id="chip"></span>
+    <span class="desc" id="desc"></span>
+    <span class="counts" id="counts"></span>
+  </div>
+
+  <table id="findings">
+    <thead><tr><th>Severity</th><th>Check</th><th>Location</th><th>Message</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="exports" id="exports">
+    <button class="btn-export" id="btn-csv">↓ CSV</button>
+    <button class="btn-export" id="btn-json">↓ JSON</button>
+  </div>
+
+  <div class="jira" id="jira"></div>
+  <div class="err" id="err"></div>
+
+  <footer>
+    Extraction is sandboxed and read-only · bundles are scanned, ticketed, then deleted · no artifact is retained
+  </footer>
+</div>
+
+<script>
+const drop=document.getElementById('drop'),file=document.getElementById('file'),
+      meta=document.getElementById('meta'),verdict=document.getElementById('verdict'),
+      chip=document.getElementById('chip'),desc=document.getElementById('desc'),
+      counts=document.getElementById('counts'),table=document.getElementById('findings'),
+      rows=document.getElementById('rows'),jira=document.getElementById('jira'),
+      err=document.getElementById('err'),exports=document.getElementById('exports');
+
+const DESCS={
+  PASS:"No findings. Safe to import after sign-off.",
+  REVIEW:"Medium-severity findings. Human review recommended.",
+  BLOCK_REVIEW:"High-severity hygiene findings. Blocked pending author justification.",
+  REJECT:"Security signal detected. Do not import."
+};
+
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click();}});
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',e=>{if(e.dataTransfer.files.length)send(e.dataTransfer.files[0]);});
+file.addEventListener('change',()=>{if(file.files.length)send(file.files[0]);});
+
+let _lastResult=null,_lastFilename='skillgate';
+
+function reset(){[verdict,table,exports,jira,err].forEach(el=>el.classList.remove('show'));rows.innerHTML='';_lastResult=null;}
+
+async function send(f){
+  reset();
+  meta.innerHTML=`<span>file: <b>${esc(f.name)}</b></span><span>size: <b>${(f.size/1024).toFixed(1)} KB</b></span><span>scanning…</span>`;
+  const fd=new FormData();fd.append('file',f);
+  let res,data;
+  try{res=await fetch('/upload',{method:'POST',body:fd});data=await res.json();}
+  catch(e){return fail("network error: "+e.message);}
+  if(!res.ok&&!data.decision){return fail(data.detail||("error "+res.status));}
+  render(f,data);
+}
+
+function render(f,d){
+  meta.innerHTML=`<span>file: <b>${esc(f.name)}</b></span>`+
+    `<span>sha256: <b>${(d.sha256||'').slice(0,16)}…</b></span>`+
+    (d.file_count?`<span>files: <b>${d.file_count}</b></span>`:'')+
+    (d.engines_run&&d.engines_run.length?`<span>engines: <b>${esc(d.engines_run.join(', '))}</b></span>`:'');
+  chip.className='chip '+d.decision;chip.textContent=d.decision.replace('_',' ');
+  desc.innerHTML=DESCS[d.decision]||'';
+  const s=d.summary||{};
+  counts.innerHTML=`<span class="h">HIGH ${s.HIGH||0}</span><span class="m">MED ${s.MEDIUM||0}</span><span class="l">LOW ${s.LOW||0}</span>`;
+  verdict.classList.add('show');
+  const fs=d.findings||[];
+  if(fs.length){
+    rows.innerHTML=fs.map(x=>`<tr><td class="sev ${x.severity}">${x.severity}</td>`+
+      `<td class="check">${esc(x.check)}</td>`+
+      `<td class="loc">${esc(base(x.file))}:${x.line}</td>`+
+      `<td>${esc(x.message)}${x.check==='EGRESS_URL'&&x.excerpt?` — <a class="egress-url" href="${esc(x.excerpt)}" target="_blank" rel="noopener noreferrer">${esc(x.excerpt)}</a>`:''}` +
+      `</td></tr>`).join('');
+    table.classList.add('show');
+  }
+  _lastResult=d; _lastFilename=f.name.replace(/\.[^.]+$/,'');
+  exports.classList.add('show');
+  const j=d.jira||{};
+  if(j.status==='created'){jira.innerHTML=`ticket created: <a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.key)}</a>`;}
+  else if(j.status==='dry_run'){jira.innerHTML='jira dry-run — no ticket created (set JIRA_* env to enable)';}
+  else if(j.status==='error'){jira.innerHTML=`jira error: ${esc(j.detail||j.code||'unknown')}`;}
+  jira.classList.add('show');
+}
+
+function download(content,filename,mime){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:mime}));
+  a.download=filename;a.click();URL.revokeObjectURL(a.href);
+}
+
+function csvCell(v){const s=String(v==null?'':v).replace(/[\r\n]+/g,' ').trim();return /[",]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+
+document.getElementById('btn-csv').addEventListener('click',()=>{
+  if(!_lastResult)return;
+  const rows=[['severity','check','file','line','message','excerpt']].concat(
+    (_lastResult.findings||[]).map(x=>[x.severity,x.check,base(x.file),x.line,x.message,x.excerpt||'']));
+  download(rows.map(r=>r.map(csvCell).join(',')).join('\n'),_lastFilename+'-findings.csv','text/csv');
+});
+
+document.getElementById('btn-json').addEventListener('click',()=>{
+  if(!_lastResult)return;
+  download(JSON.stringify(_lastResult,null,2),_lastFilename+'-findings.json','application/json');
+});
+
+function fail(m){err.textContent=m;err.classList.add('show');meta.innerHTML='';}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function base(p){return String(p||'').split('/').pop();}
+</script>
+</body>
+</html>
