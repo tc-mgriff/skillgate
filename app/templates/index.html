@@ -144,7 +144,7 @@ async function send(f){
   meta.innerHTML=`<span>file: <b>${esc(f.name)}</b></span><span>size: <b>${(f.size/1024).toFixed(1)} KB</b></span><span>scanning…</span>`;
   const fd=new FormData();fd.append('file',f);
   let res,data;
-  try{res=await fetch('/upload',{method:'POST',body:fd});data=await res.json();}
+  try{res=await fetch('upload',{method:'POST',body:fd});data=await res.json();}
   catch(e){return fail("network error: "+e.message);}
   if(!res.ok&&!data.decision){return fail(data.detail||("error "+res.status));}
   render(f,data);
