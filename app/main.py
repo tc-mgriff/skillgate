@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .extract import safe_extract_zip, UnsafeArchive
+from .extract import safe_extract_zip, UnsafeArchive, OversizedArchive
 from .worker import ScanError
 from .engines import aggregate
 from . import jira_client
@@ -95,8 +95,30 @@ async def upload(file: UploadFile = File(...)):
             try:
                 result = safe_extract_zip(artifact, extracted)
                 file_count = result.file_count
+            except OversizedArchive as e:
+                # Resource limit — not a security signal; submit for review with a note
+                meta = {"filename": file.filename, "sha256": sha256,
+                        "upload_bytes": data}
+                archive_finding = {
+                    "severity": "MEDIUM", "check": "ARCHIVE_SIZE",
+                    "file": file.filename or "bundle", "line": 0,
+                    "message": f"Bundle exceeds processing limit: {e}. "
+                               "A reviewer will need to inspect this manually."}
+                decision = {
+                    "decision": "REVIEW",
+                    "hard_reject": [],
+                    "block_review": [],
+                    "summary": {"HIGH": 0, "MEDIUM": 1, "LOW": 0},
+                    "all_findings": [archive_finding],
+                }
+                ticket = jira_client.create_ticket(meta, decision)
+                return JSONResponse(content={
+                    "decision": "REVIEW",
+                    "findings": decision["all_findings"],
+                    "summary": decision["summary"],
+                    "sha256": sha256, "jira": ticket})
             except UnsafeArchive as e:
-                # rejected at extraction: still file a Jira ticket so it's tracked
+                # Genuine security signal — reject and track in Jira
                 meta = {"filename": file.filename, "sha256": sha256,
                         "upload_bytes": data}
                 archive_finding = {

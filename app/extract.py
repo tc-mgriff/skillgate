@@ -27,13 +27,20 @@ from dataclasses import dataclass, field
 
 MAX_ENTRIES = 2_000              # files in the archive
 MAX_TOTAL_UNCOMPRESSED = 50 * 1024 * 1024   # 50 MB extracted total
-MAX_FILE_UNCOMPRESSED = 10 * 1024 * 1024    # 10 MB per file
+MAX_FILE_UNCOMPRESSED = 25 * 1024 * 1024    # 25 MB per file (matches upload cap)
 MAX_RATIO = 100                  # uncompressed/compressed; higher => likely bomb
 S_IFLNK = 0o120000               # unix symlink mode bits
 
 
 class UnsafeArchive(Exception):
-    """Raised when a bundle violates an extraction safety rule."""
+    """Raised when a bundle violates a security rule (path traversal, symlink, zip bomb).
+    These are hard-reject signals — the bundle cannot be trusted."""
+
+
+class OversizedArchive(UnsafeArchive):
+    """Raised when a bundle exceeds a resource cap (file too large, too many entries,
+    total size). Not a security signal — the bundle is probably fine but can't be
+    processed within the configured limits."""
 
 
 @dataclass
@@ -65,13 +72,13 @@ def safe_extract_zip(zip_path, dest_dir):
         infos = zf.infolist()
 
         if len(infos) > MAX_ENTRIES:
-            raise UnsafeArchive(
+            raise OversizedArchive(
                 f"too many entries: {len(infos)} > {MAX_ENTRIES}")
 
         total_unc = sum(i.file_size for i in infos)
         total_comp = sum(i.compress_size for i in infos) or 1
         if total_unc > MAX_TOTAL_UNCOMPRESSED:
-            raise UnsafeArchive(
+            raise OversizedArchive(
                 f"uncompressed size {total_unc} exceeds "
                 f"{MAX_TOTAL_UNCOMPRESSED}")
         if total_unc / total_comp > MAX_RATIO:
@@ -94,7 +101,7 @@ def safe_extract_zip(zip_path, dest_dir):
                 raise UnsafeArchive(f"symlink entry rejected: {name}")
 
             if info.file_size > MAX_FILE_UNCOMPRESSED:
-                raise UnsafeArchive(
+                raise OversizedArchive(
                     f"file too large: {name} ({info.file_size} bytes)")
 
             target = os.path.join(dest_dir, norm)
@@ -120,7 +127,7 @@ def safe_extract_zip(zip_path, dest_dir):
                             break
                         written += len(chunk)
                         if written > MAX_FILE_UNCOMPRESSED:
-                            raise UnsafeArchive(
+                            raise OversizedArchive(
                                 f"file exceeded size cap during read: {norm}")
                         dst.write(chunk)
                 extracted.append(norm)
