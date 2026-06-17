@@ -99,22 +99,22 @@ async def upload(file: UploadFile = File(...)):
                 # rejected at extraction: still file a Jira ticket so it's tracked
                 meta = {"filename": file.filename, "sha256": sha256,
                         "upload_bytes": data}
+                archive_finding = {
+                    "severity": "HIGH", "check": "ARCHIVE",
+                    "file": file.filename or "bundle", "line": 0,
+                    "message": f"Unsafe archive: {e}"}
                 decision = {
                     "decision": "REJECT",
-                    "hard_reject": [{
-                        "severity": "HIGH", "check": "ARCHIVE",
-                        "file": file.filename or "bundle", "line": 0,
-                        "message": f"Unsafe archive: {e}"}],
+                    "hard_reject": [archive_finding],
                     "block_review": [],
                     "summary": {"HIGH": 1, "MEDIUM": 0, "LOW": 0},
-                    "all_findings": [{
-                        "severity": "HIGH", "check": "ARCHIVE",
-                        "file": file.filename or "bundle", "line": 0,
-                        "message": f"Unsafe archive: {e}"}],
+                    "all_findings": [archive_finding],
                 }
                 ticket = jira_client.create_ticket(meta, decision)
                 return JSONResponse(status_code=422, content={
-                    "decision": "REJECT", "reason": str(e),
+                    "decision": "REJECT",
+                    "findings": decision["all_findings"],
+                    "summary": decision["summary"],
                     "sha256": sha256, "jira": ticket})
 
         # scan + decide (multi-engine)

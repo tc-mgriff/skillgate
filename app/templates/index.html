@@ -32,17 +32,21 @@
   .meta{font-family:var(--mono);font-size:12px;color:var(--muted);
         margin-top:18px;display:flex;gap:18px;flex-wrap:wrap}
   .meta span b{color:var(--ink);font-weight:500}
-  .verdict{margin-top:28px;display:none;align-items:center;gap:16px;
-           padding:18px 20px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
-  .verdict.show{display:flex}
-  .chip{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.08em;
-        padding:6px 12px;border-radius:4px;color:var(--bg)}
-  .chip.PASS{background:var(--pass)} .chip.REVIEW{background:var(--review)}
-  .chip.BLOCK_REVIEW{background:var(--block)} .chip.REJECT{background:var(--reject)}
-  .verdict .desc{font-size:13px;color:var(--muted)}
-  .verdict .desc b{color:var(--ink)}
-  .counts{margin-left:auto;font-family:var(--mono);font-size:12px;display:flex;gap:12px}
-  .counts .h{color:var(--reject)} .counts .m{color:var(--review)} .counts .l{color:var(--muted)}
+  .status{margin-top:28px;display:none;border-radius:8px;border:1px solid var(--line);
+          background:var(--panel);padding:18px 20px}
+  .status.show{display:block}
+  .status.blocked{border-left:3px solid var(--reject)}
+  .status.submitted{border-left:3px solid var(--pass)}
+  .status-title{font-size:14px;font-weight:600;margin-bottom:5px}
+  .status.blocked .status-title{color:var(--reject)}
+  .status.submitted .status-title{color:var(--pass)}
+  .status-sub{font-size:13px;color:var(--muted)}
+  .status-sub a{color:var(--accent);text-decoration:none}
+  .status-sub a:hover{text-decoration:underline}
+  .findings-label{margin-top:22px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+                  text-transform:uppercase;color:var(--muted);display:none}
+  .findings-label.show{display:block}
+  tr.blocking td{background:rgba(248,81,73,0.06)}
   table{width:100%;border-collapse:collapse;margin-top:24px;font-size:13px;display:none;table-layout:fixed}
   table.show{display:table}
   th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
@@ -54,12 +58,8 @@
   td.sev.HIGH{color:var(--reject)} td.sev.MEDIUM{color:var(--review)} td.sev.LOW{color:var(--muted)}
   td.loc{font-family:var(--mono);color:var(--muted);word-break:break-all}
   td.check{font-family:var(--mono);color:var(--ink)}
-  .jira{margin-top:22px;font-size:13px;font-family:var(--mono);color:var(--muted);display:none}
-  .jira.show{display:block}
-  .jira a,.egress-url{color:var(--accent);text-decoration:none}
+  .egress-url{color:var(--accent);text-decoration:none}
   .egress-url:hover{text-decoration:underline}
-  .jira a:hover{text-decoration:underline}
-  .warn{margin-top:8px;font-size:12px;color:var(--review);font-family:var(--mono)}
   .err{color:var(--reject);font-family:var(--mono);font-size:13px;margin-top:20px;display:none}
   .err.show{display:block}
   .exports{margin-top:18px;display:none;gap:8px}
@@ -90,11 +90,12 @@
 
   <div class="meta" id="meta"></div>
 
-  <div class="verdict" id="verdict">
-    <span class="chip" id="chip"></span>
-    <span class="desc" id="desc"></span>
-    <span class="counts" id="counts"></span>
+  <div class="status" id="status">
+    <div class="status-title" id="status-title"></div>
+    <div class="status-sub" id="status-sub"></div>
   </div>
+
+  <div class="findings-label" id="findings-label"></div>
 
   <table id="findings">
     <thead><tr><th>Severity</th><th>Check</th><th>Location</th><th>Message</th></tr></thead>
@@ -106,7 +107,6 @@
     <button class="btn-export" id="btn-json">↓ JSON</button>
   </div>
 
-  <div class="jira" id="jira"></div>
   <div class="err" id="err"></div>
 
   <footer>
@@ -116,18 +116,22 @@
 
 <script>
 const drop=document.getElementById('drop'),file=document.getElementById('file'),
-      meta=document.getElementById('meta'),verdict=document.getElementById('verdict'),
-      chip=document.getElementById('chip'),desc=document.getElementById('desc'),
-      counts=document.getElementById('counts'),table=document.getElementById('findings'),
-      rows=document.getElementById('rows'),jira=document.getElementById('jira'),
+      meta=document.getElementById('meta'),
+      status=document.getElementById('status'),
+      statusTitle=document.getElementById('status-title'),
+      statusSub=document.getElementById('status-sub'),
+      findingsLabel=document.getElementById('findings-label'),
+      table=document.getElementById('findings'),
+      rows=document.getElementById('rows'),
       err=document.getElementById('err'),exports=document.getElementById('exports');
 
-const DESCS={
-  PASS:"No findings. Safe to import after sign-off.",
-  REVIEW:"Medium-severity findings. Human review recommended.",
-  BLOCK_REVIEW:"High-severity hygiene findings. Blocked pending author justification.",
-  REJECT:"Security signal detected. Do not import."
-};
+// Mirrors engines.py HARD_REJECT set — these findings block the submission
+const HARD_REJECT_CHECKS=new Set([
+  'INJECTION_PATTERN','HIDDEN_CHARS','ARCHIVE',
+  'CODE_SHELL_DOWNLOAD_EXEC','CODE_OBFUSCATION','CODE_CODE_EXEC',
+  'CODE_SHELL_OUT','CODE_FILE_WRITE_OUTSIDE','CODE_DESERIALIZE',
+  'CODE_SECRET','CODE_EXFIL_PATTERN'
+]);
 
 drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click();}});
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
@@ -137,7 +141,10 @@ file.addEventListener('change',()=>{if(file.files.length)send(file.files[0]);});
 
 let _lastResult=null,_lastFilename='skillgate';
 
-function reset(){[verdict,table,exports,jira,err].forEach(el=>el.classList.remove('show'));rows.innerHTML='';_lastResult=null;}
+function reset(){
+  [status,table,exports,findingsLabel,err].forEach(el=>el.classList.remove('show'));
+  rows.innerHTML='';_lastResult=null;
+}
 
 async function send(f){
   reset();
@@ -155,27 +162,54 @@ function render(f,d){
     `<span>sha256: <b>${(d.sha256||'').slice(0,16)}…</b></span>`+
     (d.file_count?`<span>files: <b>${d.file_count}</b></span>`:'')+
     (d.engines_run&&d.engines_run.length?`<span>engines: <b>${esc(d.engines_run.join(', '))}</b></span>`:'');
-  chip.className='chip '+d.decision;chip.textContent=d.decision.replace('_',' ');
-  desc.innerHTML=DESCS[d.decision]||'';
-  const s=d.summary||{};
-  counts.innerHTML=`<span class="h">HIGH ${s.HIGH||0}</span><span class="m">MED ${s.MEDIUM||0}</span><span class="l">LOW ${s.LOW||0}</span>`;
-  verdict.classList.add('show');
+
+  const rejected=d.decision==='REJECT';
   const fs=d.findings||[];
+  const blockingCount=fs.filter(x=>x.severity==='HIGH'&&HARD_REJECT_CHECKS.has(x.check)).length;
+  const s=d.summary||{};
+  const totalFindings=fs.length;
+
+  status.className='status show '+(rejected?'blocked':'submitted');
+
+  if(rejected){
+    statusTitle.textContent='Submission blocked — security issues detected';
+    statusSub.textContent=blockingCount
+      ? `${blockingCount} security finding${blockingCount===1?'':'s'} must be resolved before this skill can be submitted for review.`
+      : 'Security issues were found. Fix them before resubmitting.';
+  } else {
+    statusTitle.textContent='Submitted for review';
+    const j=d.jira||{};
+    let jiraHtml='';
+    if(j.status==='created')
+      jiraHtml=`Jira ticket: <a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.key)}</a> · `;
+    else if(j.status==='dry_run')
+      jiraHtml='Jira dry-run · ';
+    else if(j.status==='error')
+      jiraHtml=`Jira error: ${esc(j.detail||j.code||'unknown')} · `;
+    const noteCount=totalFindings
+      ? `${totalFindings} note${totalFindings===1?'':'s'} for the reviewer`
+      : 'no findings';
+    statusSub.innerHTML=jiraHtml+noteCount;
+  }
+
   if(fs.length){
-    rows.innerHTML=fs.map(x=>`<tr><td class="sev ${x.severity}">${x.severity}</td>`+
-      `<td class="check">${esc(x.check)}</td>`+
-      `<td class="loc">${esc(base(x.file))}:${x.line}</td>`+
-      `<td>${esc(x.message)}${x.check==='EGRESS_URL'&&x.excerpt?` — <a class="egress-url" href="${esc(x.excerpt)}" target="_blank" rel="noopener noreferrer">${esc(x.excerpt)}</a>`:''}` +
-      `</td></tr>`).join('');
+    findingsLabel.textContent=rejected?'Security findings:':'Reviewer notes:';
+    findingsLabel.classList.add('show');
+    rows.innerHTML=fs.map(x=>{
+      const blocking=x.severity==='HIGH'&&HARD_REJECT_CHECKS.has(x.check);
+      return `<tr${blocking?' class="blocking"':''}>`+
+        `<td class="sev ${x.severity}">${x.severity}</td>`+
+        `<td class="check">${esc(x.check)}</td>`+
+        `<td class="loc">${esc(base(x.file))}:${x.line}</td>`+
+        `<td>${esc(x.message)}${x.check==='EGRESS_URL'&&x.excerpt
+          ?` — <a class="egress-url" href="${esc(x.excerpt)}" target="_blank" rel="noopener noreferrer">${esc(x.excerpt)}</a>`
+          :''}</td></tr>`;
+    }).join('');
     table.classList.add('show');
   }
-  _lastResult=d; _lastFilename=f.name.replace(/\.[^.]+$/,'');
+
+  _lastResult=d;_lastFilename=f.name.replace(/\.[^.]+$/,'');
   exports.classList.add('show');
-  const j=d.jira||{};
-  if(j.status==='created'){jira.innerHTML=`ticket created: <a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.key)}</a>`;}
-  else if(j.status==='dry_run'){jira.innerHTML='jira dry-run — no ticket created (set JIRA_* env to enable)';}
-  else if(j.status==='error'){jira.innerHTML=`jira error: ${esc(j.detail||j.code||'unknown')}`;}
-  jira.classList.add('show');
 }
 
 function download(content,filename,mime){
